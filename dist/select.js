@@ -1,7 +1,7 @@
 /*!
  * ui-select
  * http://github.com/angular-ui/ui-select
- * Version: 0.13.1 - 2015-09-30T05:39:26.655Z
+ * Version: 0.13.2 - 2015-10-09T15:33:09.902Z
  * License: MIT
  */
 
@@ -391,10 +391,11 @@ uis.controller('uiSelectCtrl',
     
     //When an object is used as source, we better create an array and use it as 'source'
     var createArrayFromObject = function(){
-      $scope.$uisSource = Object.keys(originalSource($scope)).map(function(v){
+      var origSrc = originalSource($scope);
+      $scope.$uisSource = Object.keys(origSrc).map(function(v){
         var result = {};
         result[ctrl.parserResult.keyName] = v;
-        result.value = $scope.peopleObj[v];
+        result.value = origSrc[v];
         return result;
       });
     };
@@ -806,9 +807,12 @@ uis.directive('uiSelect',
 
       //Multiple or Single depending if multiple attribute presence
       if (angular.isDefined(tAttrs.multiple))
-        tElement.append("<ui-select-multiple/>").removeAttr('multiple');
+        tElement.append('<ui-select-multiple/>').removeAttr('multiple');
       else
-        tElement.append("<ui-select-single/>");       
+        tElement.append('<ui-select-single/>');
+
+      if (tAttrs.inputId)
+        tElement.querySelectorAll('input.ui-select-search')[0].id = tAttrs.inputId;
 
       return function(scope, element, attrs, ctrls, transcludeFn) {
 
@@ -830,7 +834,7 @@ uis.directive('uiSelect',
 
         $select.onSelectCallback = $parse(attrs.onSelect);
         $select.onRemoveCallback = $parse(attrs.onRemove);
-        
+
         //Limit the number of selections allowed
         $select.limit = (angular.isDefined(attrs.limit)) ? parseInt(attrs.limit, 10) : undefined;
 
@@ -843,8 +847,8 @@ uis.directive('uiSelect',
 
         if(attrs.tabindex){
           attrs.$observe('tabindex', function(value) {
-            $select.focusInput.attr("tabindex", value);
-            element.removeAttr("tabindex");
+            $select.focusInput.attr('tabindex', value);
+            element.removeAttr('tabindex');
           });
         }
 
@@ -1861,7 +1865,7 @@ uis.service('uisRepeatParser', ['uiSelectMinErr','$parse', function(uiSelectMinE
 
     // if (isObjectCollection){
       //00000000000000000000000000000111111111000000000000000222222222222220033333333333333333333330000444444444444444444000000000000000556666660000077777777777755000000000000000000000088888880000000
-    match = expression.match(/^\s*(?:([\s\S]+?)\s+as\s+)?(?:([\$\w][\$\w]*)|(?:\(\s*([\$\w][\$\w]*)\s*,\s*([\$\w][\$\w]*)\s*\)))\s+in\s+(([\w]+)?\s*(|\s*[\s\S]+?))?(?:\s+track\s+by\s+([\s\S]+?))?\s*$/);      
+    match = expression.match(/^\s*(?:([\s\S]+?)\s+as\s+)?(?:([\$\w][\$\w]*)|(?:\(\s*([\$\w][\$\w]*)\s*,\s*([\$\w][\$\w]*)\s*\)))\s+in\s+(([\w\.]+)?\s*(|\s*[\s\S]+?))?(?:\s+track\s+by\s+([\s\S]+?))?\s*$/);      
 
     // 1 Alias
     // 2 Item
