@@ -5,8 +5,8 @@
  * put as much logic in the controller (instead of the link functions) as possible so it can be easily tested.
  */
 uis.controller('uiSelectCtrl',
-  ['$scope', '$element', '$timeout', '$filter', 'uisRepeatParser', 'uiSelectMinErr', 'uiSelectConfig',
-  function($scope, $element, $timeout, $filter, RepeatParser, uiSelectMinErr, uiSelectConfig) {
+  ['$scope', '$element', '$timeout', '$filter', 'uisRepeatParser', 'uiSelectMinErr', 'uiSelectConfig', '$parse',
+  function($scope, $element, $timeout, $filter, RepeatParser, uiSelectMinErr, uiSelectConfig, $parse) {
 
   var ctrl = this;
 
@@ -28,6 +28,8 @@ uis.controller('uiSelectCtrl',
   ctrl.focus = false;
   ctrl.disabled = false;
   ctrl.selected = undefined;
+
+  ctrl.dropdownPosition = 'auto';
 
   ctrl.focusser = undefined; //Reference to input element used to handle focus events
   ctrl.resetSearchInput = true;
@@ -59,6 +61,18 @@ uis.controller('uiSelectCtrl',
     }
   }
 
+    function _groupsFilter(groups, groupNames) {
+      var i, j, result = [];
+      for(i = 0; i < groupNames.length ;i++){
+        for(j = 0; j < groups.length ;j++){
+          if(groups[j].name == [groupNames[i]]){
+            result.push(groups[j]);
+          }
+        }
+      }
+      return result;
+    }
+
   // When the user clicks on ui-select, displays the dropdown list
   ctrl.activate = function(initSearchValue, avoidReset) {
     if (!ctrl.disabled  && !ctrl.open) {
@@ -80,6 +94,9 @@ uis.controller('uiSelectCtrl',
       $timeout(function() {
         ctrl.search = initSearchValue || ctrl.search;
         ctrl.searchInput[0].focus();
+        if(!ctrl.tagging.isActivated && ctrl.items.length > 1) {
+          _ensureHighlightVisible();
+        }
       });
     }
   };
@@ -90,11 +107,11 @@ uis.controller('uiSelectCtrl',
     })[0];
   };
 
-  ctrl.parseRepeatAttr = function(repeatAttr, groupByExp) {
+  ctrl.parseRepeatAttr = function(repeatAttr, groupByExp, groupFilterExp) {
     function updateGroups(items) {
+      var groupFn = $scope.$eval(groupByExp);
       ctrl.groups = [];
       angular.forEach(items, function(item) {
-        var groupFn = $scope.$eval(groupByExp);
         var groupName = angular.isFunction(groupFn) ? groupFn(item) : item[groupFn];
         var group = ctrl.findGroupByName(groupName);
         if(group) {
@@ -104,6 +121,14 @@ uis.controller('uiSelectCtrl',
           ctrl.groups.push({name: groupName, items: [item]});
         }
       });
+      if(groupFilterExp){
+        var groupFilterFn = $scope.$eval(groupFilterExp);
+        if( angular.isFunction(groupFilterFn)){
+          ctrl.groups = groupFilterFn(ctrl.groups);
+        } else if(angular.isArray(groupFilterFn)){
+          ctrl.groups = _groupsFilter(ctrl.groups, groupFilterFn);
+        }
+      }
       ctrl.items = [];
       ctrl.groups.forEach(function(group) {
         ctrl.items = ctrl.items.concat(group.items);
@@ -121,15 +146,38 @@ uis.controller('uiSelectCtrl',
     ctrl.isGrouped = !!groupByExp;
     ctrl.itemProperty = ctrl.parserResult.itemName;
 
+    //If collection is an Object, convert it to Array
+
+    var originalSource = ctrl.parserResult.source;
+    
+    //When an object is used as source, we better create an array and use it as 'source'
+    var createArrayFromObject = function(){
+      $scope.$uisSource = Object.keys(originalSource($scope)).map(function(v){
+        var result = {};
+        result[ctrl.parserResult.keyName] = v;
+        result.value = $scope.peopleObj[v];
+        return result;
+      });
+    };
+
+    if (ctrl.parserResult.keyName){ // Check for (key,value) syntax
+      createArrayFromObject();
+      ctrl.parserResult.source = $parse('$uisSource' + ctrl.parserResult.filters);
+      $scope.$watch(originalSource, function(newVal, oldVal){
+        if (newVal !== oldVal) createArrayFromObject();
+      }, true);
+    }
+
     ctrl.refreshItems = function (data){
+      $scope.calculateDropdownPos();
       data = data || ctrl.parserResult.source($scope);
       var selectedItems = ctrl.selected;
       //TODO should implement for single mode removeSelected
-      if ((angular.isArray(selectedItems) && !selectedItems.length) || !ctrl.removeSelected) {
+      if (ctrl.isEmpty() || (angular.isArray(selectedItems) && !selectedItems.length) || !ctrl.removeSelected) {
         ctrl.setItemsFn(data);
       }else{
         if ( data !== undefined ) {
-          var filteredItems = data.filter(function(i) {return selectedItems.indexOf(i) < 0;});
+          var filteredItems = data.filter(function(i) {return selectedItems && selectedItems.indexOf(i) < 0;});
           ctrl.setItemsFn(filteredItems);
         }
       }
@@ -144,7 +192,7 @@ uis.controller('uiSelectCtrl',
         ctrl.items = [];
       } else {
         if (!angular.isArray(items)) {
-          throw uiSelectMinErr('items', "Expected an array but got '{0}'.", items);
+          throw uiSelectMinErr('items', "Expected an array but got '{0}'.", items);          
         } else {
           //Remove already selected items (ex: while searching)
           //TODO Should add a test
@@ -176,10 +224,6 @@ uis.controller('uiSelectCtrl',
         $scope.$eval(refreshAttr);
       }, ctrl.refreshDelay);
     }
-  };
-
-  ctrl.setActiveItem = function(item) {
-    ctrl.activeIndex = ctrl.items.indexOf(item);
   };
 
   ctrl.isActive = function(itemScope) {
@@ -304,7 +348,9 @@ uis.controller('uiSelectCtrl',
   ctrl.clear = function($event) {
     ctrl.select(undefined);
     $event.stopPropagation();
-    ctrl.focusser[0].focus();
+    $timeout(function() {
+      ctrl.focusser[0].focus();
+    }, 0, false);
   };
 
   // Toggle dropdown
@@ -376,8 +422,8 @@ uis.controller('uiSelectCtrl',
         if (!ctrl.multiple || ctrl.open) ctrl.select(ctrl.items[ctrl.activeIndex], true);
         break;
       case KEY.ENTER:
-        if(ctrl.open && ctrl.activeIndex >= 0){
-          ctrl.select(ctrl.items[ctrl.activeIndex]); // Make sure at least one dropdown item is highlighted before adding.
+        if(ctrl.open && (ctrl.tagging.isActivated || ctrl.activeIndex >= 0)){
+          ctrl.select(ctrl.items[ctrl.activeIndex]); // Make sure at least one dropdown item is highlighted before adding if not in tagging mode
         } else {
           ctrl.activate(false, true); //In case its the search input in 'multiple' mode
         }
@@ -433,6 +479,11 @@ uis.controller('uiSelectCtrl',
 
     if(KEY.isVerticalMovement(key) && ctrl.items.length > 0){
       _ensureHighlightVisible();
+    }
+
+    if (key === KEY.ENTER || key === KEY.ESC) {
+      e.preventDefault();
+      e.stopPropagation();
     }
 
   });

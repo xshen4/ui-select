@@ -44,6 +44,9 @@ uis.directive('uiSelect',
         $select.onSelectCallback = $parse(attrs.onSelect);
         $select.onRemoveCallback = $parse(attrs.onRemove);
         
+        //Limit the number of selections allowed
+        $select.limit = (angular.isDefined(attrs.limit)) ? parseInt(attrs.limit, 10) : undefined;
+
         //Set reference to ngModel from uiSelectCtrl
         $select.ngModel = ngModel;
 
@@ -146,8 +149,8 @@ uis.directive('uiSelect',
           if (!contains && !$select.clickTriggeredSelect) {
             //Will lose focus only with certain targets
             var focusableControls = ['input','button','textarea'];
-            var targetScope = angular.element(e.target).scope(); //To check if target is other ui-select
-            var skipFocusser = targetScope && targetScope.$select && targetScope.$select !== $select; //To check if target is other ui-select
+            var targetController = angular.element(e.target).controller('uiSelect'); //To check if target is other ui-select
+            var skipFocusser = targetController && targetController !== $select; //To check if target is other ui-select
             if (!skipFocusser) skipFocusser =  ~focusableControls.indexOf(e.target.tagName.toLowerCase()); //Check if target is input, button or textarea
             $select.close(skipFocusser);
             scope.$digest();
@@ -248,6 +251,96 @@ uis.directive('uiSelect',
           element[0].style.top = '';
           element[0].style.width = originalWidth;
         }
+
+        // Hold on to a reference to the .ui-select-dropdown element for direction support.
+        var dropdown = null,
+            directionUpClassName = 'direction-up';
+
+        // Support changing the direction of the dropdown if there isn't enough space to render it.
+        scope.$watch('$select.open', function() {
+
+          if ($select.dropdownPosition === 'auto' || $select.dropdownPosition === 'up'){
+            scope.calculateDropdownPos();
+          }
+
+        });
+
+        var setDropdownPosUp = function(offset, offsetDropdown){
+
+          offset = offset || uisOffset(element);
+          offsetDropdown = offsetDropdown || uisOffset(dropdown);
+
+          dropdown[0].style.position = 'absolute';
+          dropdown[0].style.top = (offsetDropdown.height * -1) + 'px';
+          element.addClass(directionUpClassName);
+
+        };
+
+        var setDropdownPosDown = function(offset, offsetDropdown){
+
+          element.removeClass(directionUpClassName);
+
+          offset = offset || uisOffset(element);
+          offsetDropdown = offsetDropdown || uisOffset(dropdown);
+
+          dropdown[0].style.position = '';
+          dropdown[0].style.top = '';
+
+        };
+
+        scope.calculateDropdownPos = function(){
+
+          if ($select.open) {
+            dropdown = angular.element(element).querySelectorAll('.ui-select-dropdown');
+            if (dropdown.length === 0) {
+              return;
+            }
+
+            // Hide the dropdown so there is no flicker until $timeout is done executing.
+            dropdown[0].style.opacity = 0;
+
+            // Delay positioning the dropdown until all choices have been added so its height is correct.
+            $timeout(function(){
+
+              if ($select.dropdownPosition === 'up'){
+                  //Go UP
+                  setDropdownPosUp(offset, offsetDropdown);
+
+              }else{ //AUTO
+
+                element.removeClass(directionUpClassName);
+
+                var offset = uisOffset(element);
+                var offsetDropdown = uisOffset(dropdown);
+
+                //https://code.google.com/p/chromium/issues/detail?id=342307#c4
+                var scrollTop = $document[0].documentElement.scrollTop || $document[0].body.scrollTop; //To make it cross browser (blink, webkit, IE, Firefox).
+
+                // Determine if the direction of the dropdown needs to be changed.
+                if (offset.top + offset.height + offsetDropdown.height > scrollTop + $document[0].documentElement.clientHeight) {
+                  //Go UP
+                  setDropdownPosUp(offset, offsetDropdown);
+                }else{
+                  //Go DOWN
+                  setDropdownPosDown(offset, offsetDropdown);
+                }
+
+              }
+
+              // Display the dropdown once it has been positioned.
+              dropdown[0].style.opacity = 1;
+            });
+          } else {
+              if (dropdown === null || dropdown.length === 0) {
+                return;
+              }
+
+              // Reset the position of the dropdown.
+              dropdown[0].style.position = '';
+              dropdown[0].style.top = '';
+              element.removeClass(directionUpClassName);
+          }
+        };
       };
     }
   };
